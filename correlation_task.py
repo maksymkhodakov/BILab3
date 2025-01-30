@@ -3,7 +3,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.impute import SimpleImputer
-from scipy.stats import chi2_contingency
+from scipy.stats import chi2_contingency, pearsonr, spearmanr
+from sklearn.metrics import mutual_info_score
+import numpy as np
 
 # Завантаження даних
 df = pd.read_csv('CSV_BI_Lab1_data_source.csv', sep=';')
@@ -14,9 +16,17 @@ df['Authors'] = df['Authors'].fillna(df['Authors'].mode()[0])  # Аналогі�
 df['PublisherNaming'] = df['PublisherNaming'].fillna(
     df['PublisherNaming'].mode()[0])  # Аналогічно для 'PublisherNaming'
 
+# Перетворення значень у колонці 'Rating' з комами на крапки і перетворення на float
+df['Rating'] = df['Rating'].replace({',': '.'}, regex=True).astype(float)
+
 # Створюємо категоріальну змінну для 'CountsOfReview' (для аналізу залежностей)
 df['CountsOfReviewCategory'] = pd.cut(df['CountsOfReview'], bins=[0, 100, 500, 1000, 5000, 10000, 20000],
                                       labels=["0-100", "101-500", "501-1000", "1001-5000", "5001-10000", "10001-20000"])
+
+
+# Заповнення пропущених значень для числових колонок (якщо є пропущені значення)
+imputer = SimpleImputer(strategy='mean')
+df[['CountsOfReview', 'Rating']] = imputer.fit_transform(df[['CountsOfReview', 'Rating']])
 
 
 # Функція для проведення хі-квадрат тесту
@@ -37,6 +47,22 @@ chi_square_test(df['Language'], df['CountsOfReviewCategory'])  # Залежні�
 chi_square_test(df['Authors'], df['CountsOfReviewCategory'])  # Залежність між авторами та категорією кількості оглядів
 chi_square_test(df['PublisherNaming'],
                 df['CountsOfReviewCategory'])  # Залежність між видавцем та категорією кількості оглядів
+
+# 1. Pearson Correlation between numerical variables
+correlation_matrix = df[['CountsOfReview', 'Rating']].corr(method='pearson')
+print(f"\nPearson Correlation Matrix:")
+print(correlation_matrix)
+
+# 2. Spearman Correlation (for monotonic relationships)
+spearman_corr, _ = spearmanr(df['CountsOfReview'], df['Rating'])
+print(f"\nSpearman Correlation between 'CountsOfReview' and 'Rating': {spearman_corr:.4f}")
+
+# 3. Mutual Information (for non-linear relationships)
+# Заповнюємо пропущені значення перед розрахунком
+df['CountsOfReviewCategory'] = df['CountsOfReviewCategory'].fillna(
+    df['CountsOfReviewCategory'].mode()[0])  # заповнення категоріальної змінної
+mi = mutual_info_score(df['CountsOfReviewCategory'], df['Rating'])
+print(f"\nMutual Information between 'CountsOfReviewCategory' and 'Rating': {mi:.4f}")
 
 # Побудова графіків для категоріальних змінних
 plt.figure(figsize=(10, 6))

@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
+from sklearn.metrics import silhouette_score, davies_bouldin_score
+import numpy as np
 
 # Завантаження даних
 df = pd.read_csv('CSV_BI_Lab1_data_source.csv', sep=';')
@@ -47,6 +49,24 @@ for cluster in range(3):  # 3 кластери, як визначено в KMean
 # Виведення розподілу кожного кластера по ознаках
 print("\nРозподіл по кожному кластеру для ознак RatingDist1, RatingDist2:")
 print(df.groupby('KMeans_Cluster')[['RatingDist1', 'RatingDist2']].mean())
+
+# Додаткові метрики:
+# Використання підвибірки (наприклад, 10% даних)
+sample_size = int(0.1 * X_scaled.shape[0])  # 10% від усіх даних
+sample_indices = np.random.choice(X_scaled.shape[0], sample_size, replace=False)
+X_sampled = X_scaled[sample_indices]
+
+# 1. Silhouette Score
+silhouette = silhouette_score(X_sampled, kmeans.labels_[sample_indices])
+print(f"\nSilhouette Score: {silhouette:.4f}")
+
+# 2. Davies-Bouldin Index
+davies_bouldin = davies_bouldin_score(X_sampled, kmeans.labels_[sample_indices])
+print(f"\nDavies-Bouldin Index: {davies_bouldin:.4f}")
+
+# 3. Inertia (WSS)
+inertia = kmeans.inertia_
+print(f"\nInertia (WSS): {inertia:.4f}")
 
 # Візуалізація результатів кластеризації KMeans (1)
 plt.figure(figsize=(8, 6))
