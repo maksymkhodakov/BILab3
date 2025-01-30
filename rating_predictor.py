@@ -1,8 +1,10 @@
 import pandas as pd
+import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.impute import SimpleImputer
+
 
 # Function to get user input
 def get_user_input():
@@ -23,15 +25,18 @@ df = pd.read_csv('CSV_BI_Lab1_data_source.csv', sep=';')
 df['Rating'] = df['Rating'].replace({',': '.'}, regex=True).astype(float)
 
 # Handle missing values
-# First, remove any rows where the target 'Rating' column is NaN
 df = df.dropna(subset=['Rating'])
 
 # Impute missing values in feature columns with the mean
 imputer = SimpleImputer(strategy='mean')
-df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']] = imputer.fit_transform(df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']])
+df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5',
+    'CountsOfReview']] = imputer.fit_transform(
+    df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']])
 
 # Ensure the feature columns are numeric (in case of any string values)
-df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']] = df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']].apply(pd.to_numeric, errors='coerce')
+df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']] = df[
+    ['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']].apply(pd.to_numeric,
+                                                                                                         errors='coerce')
 
 # Feature selection for training the model
 X = df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']]
@@ -55,8 +60,43 @@ mse = mean_squared_error(y_test, y_pred)
 
 # Get user input and predict rating
 user_input = get_user_input()
-prediction = model.predict([user_input])
 
+# Convert the user input into a DataFrame with the correct column names
+user_input_df = pd.DataFrame([user_input], columns=X.columns)
+
+# Predict using the model
+prediction = model.predict(user_input_df)
+
+# Display results
 print(f"Predicted Rating: {prediction[0]:.2f}")
 print(f"R2 Score: {r2:.2f}")
 print(f"Mean Squared Error: {mse:.2f}")
+
+# Visualizations
+
+# 1. Actual vs Predicted Ratings
+plt.figure(figsize=(8, 6))
+plt.scatter(y_test, y_pred, color='blue', alpha=0.6)
+plt.plot([y.min(), y.max()], [y.min(), y.max()], color='red', linestyle='--')
+plt.title('Actual vs Predicted Ratings')
+plt.xlabel('Actual Ratings')
+plt.ylabel('Predicted Ratings')
+plt.show()
+
+# 2. Feature Importance (using coefficients)
+plt.figure(figsize=(8, 6))
+features = X.columns
+importance = model.coef_
+plt.barh(features, importance, color='green')
+plt.title('Feature Importance (Linear Regression Coefficients)')
+plt.xlabel('Coefficient Value')
+plt.ylabel('Features')
+plt.show()
+
+# 3. Distribution of Ratings
+plt.figure(figsize=(8, 6))
+plt.hist(y, bins=20, color='orange', edgecolor='black')
+plt.title('Distribution of Ratings')
+plt.xlabel('Rating')
+plt.ylabel('Frequency')
+plt.show()
