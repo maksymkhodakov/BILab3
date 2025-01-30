@@ -11,11 +11,32 @@ df = pd.read_csv('CSV_BI_Lab1_data_source.csv', sep=';')
 # Заповнення пропусків для категоріальних змінних 'Language', 'Authors', 'PublisherNaming'
 df['Language'] = df['Language'].fillna(df['Language'].mode()[0])  # Заповнюємо пропуски найбільш частим значенням
 df['Authors'] = df['Authors'].fillna(df['Authors'].mode()[0])  # Аналогічно для 'Authors'
-df['PublisherNaming'] = df['PublisherNaming'].fillna(df['PublisherNaming'].mode()[0])  # Аналогічно для 'PublisherNaming'
+df['PublisherNaming'] = df['PublisherNaming'].fillna(
+    df['PublisherNaming'].mode()[0])  # Аналогічно для 'PublisherNaming'
 
 # Створюємо категоріальну змінну для 'CountsOfReview' (для аналізу залежностей)
 df['CountsOfReviewCategory'] = pd.cut(df['CountsOfReview'], bins=[0, 100, 500, 1000, 5000, 10000, 20000],
                                       labels=["0-100", "101-500", "501-1000", "1001-5000", "5001-10000", "10001-20000"])
+
+
+# Функція для проведення хі-квадрат тесту
+def chi_square_test(column1, column2):
+    crosstab = pd.crosstab(column1, column2)
+    chi2, p_val, _, _ = chi2_contingency(crosstab)
+    print(f"\nChi-squared test між {column1.name} та {column2.name}:")
+    print(f"Chi-squared: {chi2}")
+    print(f"P-value: {p_val}")
+    if p_val < 0.05:
+        print("Є статистична залежність між цими змінними (р < 0.05).")
+    else:
+        print("Немає статистичної залежності між цими змінними (р >= 0.05).")
+
+
+# Перевірка залежностей між кількома парами колонок
+chi_square_test(df['Language'], df['CountsOfReviewCategory'])  # Залежність між мовою та категорією кількості оглядів
+chi_square_test(df['Authors'], df['CountsOfReviewCategory'])  # Залежність між авторами та категорією кількості оглядів
+chi_square_test(df['PublisherNaming'],
+                df['CountsOfReviewCategory'])  # Залежність між видавцем та категорією кількості оглядів
 
 # Побудова графіків для категоріальних змінних
 plt.figure(figsize=(10, 6))
@@ -38,20 +59,6 @@ sns.countplot(data=df, x='CountsOfReviewCategory', palette='Set3')
 plt.title('Розподіл по категоріях кількості оглядів')
 plt.ylabel('Кількість книг')
 plt.show()
-
-# Аналіз залежності між мовою та кількістю оглядів за допомогою хі-квадрат тесту
-crosstab = pd.crosstab(df['Language'], df['CountsOfReviewCategory'])
-chi2, p_val, _, _ = chi2_contingency(crosstab)
-
-# Виведення результатів хі-квадрат тесту
-print(f"\nChi-squared test між мовою та категорією кількості оглядів:")
-print(f"Chi-squared: {chi2}")
-print(f"P-value: {p_val}")
-
-if p_val < 0.05:
-    print("Є статистична залежність між мовою та категорією кількості оглядів (р < 0.05).")
-else:
-    print("Немає статистичної залежності між мовою та категорією кількості оглядів (р >= 0.05).")
 
 # Побудова графіків для числових змінних
 plt.figure(figsize=(10, 6))
