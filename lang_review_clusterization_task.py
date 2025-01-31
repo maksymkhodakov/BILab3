@@ -1,5 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.impute import SimpleImputer
@@ -84,15 +85,35 @@ pca = PCA(n_components=2)
 X_pca = pca.fit_transform(X_scaled)
 
 # Візуалізація кластерів з центрами
-plt.figure(figsize=(8, 6))
+plt.figure(figsize=(10, 6))
 plt.scatter(X_pca[:, 0], X_pca[:, 1], c=df['KMeans_Cluster'], cmap='viridis', alpha=0.6)
 centers = pca.transform(kmeans.cluster_centers_)
 plt.scatter(centers[:, 0], centers[:, 1], c='red', marker='X', s=200, label='Cluster Centers')
-plt.title('KMeans Clustering with Centers (PCA Projection)')
-plt.xlabel('PCA Component 1')
-plt.ylabel('PCA Component 2')
+
+# Покращення графіка:
+plt.title('KMeans Clustering with Centers (PCA Projection)', fontsize=16)
+plt.xlabel('PCA Component 1', fontsize=12)
+plt.ylabel('PCA Component 2', fontsize=12)
 plt.colorbar(label='Cluster')
 plt.legend()
+plt.grid(True)
+plt.show()
+
+# Візуалізація для розподілу "Language" по кластерах
+plt.figure(figsize=(10, 6))
+sns.countplot(data=df, x='Language', hue='KMeans_Cluster', palette='Set2')
+plt.title('Розподіл по мовах в кожному кластері')
+plt.ylabel('Кількість книг')
+plt.xlabel('Мова')
+plt.xticks(rotation=45)
+plt.show()
+
+# Візуалізація для розподілу "CountsOfReview" по кластерах
+plt.figure(figsize=(10, 6))
+sns.boxplot(x='KMeans_Cluster', y='CountsOfReview', data=df, palette='Set3')
+plt.title('Розподіл кількості оглядів по кластерах')
+plt.xlabel('Кластер')
+plt.ylabel('Кількість оглядів')
 plt.show()
 
 # Додатково: відображення перших кількох рядків даних з класифікацією
