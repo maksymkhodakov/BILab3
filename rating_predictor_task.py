@@ -1,66 +1,89 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import OneHotEncoder
+import string
+
+
+# --- Допоміжні функції ---
+
+def extract_letter_features(title):
+    """
+    Для заданої назви книги повертаємо словник із ознаками:
+    для кожної літери англійського алфавіту (a-z) 1, якщо вона зустрічається в назві, або 0, якщо ні.
+    """
+    title = str(title).lower()
+    features = {}
+    for letter in string.ascii_lowercase:
+        features[f'letter_{letter}'] = 1 if letter in title else 0
+    return features
 
 
 # Функція для отримання введених даних від користувача
 def get_user_input():
-    print("Введіть розподіл оцінок для кожної категорії (від 1 до 5) та кількість відгуків, а також мову:")
-    rating_dist1 = float(input("Введіть розподіл оцінки 1 (кількість відгуків з оцінкою 1): "))
-    rating_dist2 = float(input("Введіть розподіл оцінки 2 (кількість відгуків з оцінкою 2): "))
-    rating_dist3 = float(input("Введіть розподіл оцінки 3 (кількість відгуків з оцінкою 3): "))
-    rating_dist4 = float(input("Введіть розподіл оцінки 4 (кількість відгуків з оцінкою 4): "))
-    rating_dist5 = float(input("Введіть розподіл оцінки 5 (кількість відгуків з оцінкою 5): "))
-    counts_of_review = int(input("Введіть загальну кількість відгуків: "))
+    print("Введіть дані для прогнозування рейтингу книги:")
+    publish_year = int(input("Введіть рік публікації: "))
     language = input("Введіть мову (наприклад, 'eng'): ")
-    return [rating_dist1, rating_dist2, rating_dist3, rating_dist4, rating_dist5, counts_of_review, language]
+    title = input("Введіть назву книги: ")
+    # Отримуємо ознаки з назви
+    letter_features = extract_letter_features(title)
+    return publish_year, language, letter_features
 
 
-# Завантаження даних (для тренування моделі)
+# --- Завантаження та підготовка даних ---
+
+# Завантаження даних з CSV; роздільник ';'
 df = pd.read_csv('CSV_BI_Lab1_data_source.csv', sep=';')
 
-# Видалення ком у колонці 'Rating' та перетворення її на тип float
+# Прибираємо зайві пробіли в назвах колонок, якщо потрібно
+df.columns = [col.strip() for col in df.columns]
+
+# Замінюємо кому на крапку в колонці 'Rating' та переводимо у тип float
 df['Rating'] = df['Rating'].replace({',': '.'}, regex=True).astype(float)
 
-# Обробка відсутніх значень
+# Видаляємо записи з пропущеним рейтингом
 df = df.dropna(subset=['Rating'])
 
-# Заповнення відсутніх значень у колонках ознак середнім значенням
+# Використовуємо наступні ознаки для прогнозу:
+# - PublishYear (рік публікації)
+# - Language (мова)
+# - Літери, присутні в назві (Name)
+# Для цього спочатку створимо ознаки з назви книги.
+letter_features_df = df['Name'].apply(extract_letter_features).apply(pd.Series)
+
+# Об'єднуємо оригінальний DataFrame з ознаками з назви
+df = pd.concat([df, letter_features_df], axis=1)
+
+# Підготовка числових ознак: PublishYear
+features_numeric = ['PublishYear']
+df[features_numeric] = df[features_numeric].apply(pd.to_numeric, errors='coerce')
 imputer = SimpleImputer(strategy='mean')
-df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5',
-    'CountsOfReview']] = imputer.fit_transform(
-    df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']])
+df[features_numeric] = imputer.fit_transform(df[features_numeric])
 
-# Переконатися, що всі ознаки мають числові значення (на випадок наявності строкових значень)
-df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']] = df[
-    ['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']].apply(pd.to_numeric,
-                                                                                                         errors='coerce')
-
-# Кодування колонки 'Language' за допомогою OneHotEncoder
-encoder = OneHotEncoder(sparse_output=False)  # Виправлення: використовуємо sparse_output=False замість sparse=False
+# One-hot кодування для колонки 'Language'
+encoder = OneHotEncoder(sparse_output=False)
 language_encoded = encoder.fit_transform(df[['Language']])
 language_encoded_df = pd.DataFrame(language_encoded, columns=encoder.get_feature_names_out(['Language']))
-
-# Додавання закодованої мови до DataFrame
 df = pd.concat([df, language_encoded_df], axis=1)
 
-# Вибір ознак для тренування моделі (включаючи закодовану мову)
-X = df[['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview'] + list(
-    language_encoded_df.columns)]
+# Остаточний набір ознак: PublishYear + закодована мова + ознаки з назви (letter_a ... letter_z)
+feature_cols = features_numeric + list(language_encoded_df.columns) + [col for col in df.columns if
+                                                                       col.startswith('letter_')]
+X = df[feature_cols]
 y = df['Rating']
 
-# Переконатися, що немає NaN значень в X та y
+# Видаляємо можливі NaN (хоча зазвичай їх не має після імпутації)
 X = X.dropna()
-y = y[X.index]  # Узгоджуємо y з ознаками (після видалення NaN з X)
+y = y[X.index]
 
-# Розподіл на тренувальні та тестові дані
+# Розподіл даних на тренувальну та тестову вибірки
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Тренування моделі лінійної регресії
+# --- Тренування моделі ---
 model = LinearRegression()
 model.fit(X_train, y_train)
 
@@ -68,57 +91,50 @@ model.fit(X_train, y_train)
 y_pred = model.predict(X_test)
 r2 = r2_score(y_test, y_pred)
 mse = mean_squared_error(y_test, y_pred)
+print(f"Linear Regression: R2 Score = {r2:.2f}, Mean Squared Error = {mse:.2f}")
 
-# Отримання введених даних від користувача та передбачення рейтингу
-user_input = get_user_input()
+# --- Business Value Explanation ---
+print("\nBusiness Value:")
+print("Ця модель прогнозує рейтинг книги на основі наступних чинників:")
+print(" - Рік публікації: дозволяє врахувати тренди та зміни вподобань аудиторії з часом.")
+print(" - Мова: різні ринки можуть мати різне сприйняття книг.")
+print(" - Літери в назві: аналізує, чи впливає стиль оформлення назви (наявність певних літер) на рейтинг.")
+print("\nВидавці можуть використовувати цей аналіз для оптимізації назв книг, адаптуючи їх під цільову аудиторію,")
+print("а також для прогнозування потенційної успішності книги перед її виходом на ринок.\n")
 
-# Перетворення введених даних користувача в DataFrame з відповідними назвами колонок
-user_input_data = user_input[:-1]  # Видалення мови з введених даних для one-hot кодування
-user_input_language = user_input[-1]  # Витягуємо мову окремо
+# --- Отримання введених даних від користувача та прогноз ---
+publish_year, language, user_letter_features = get_user_input()
 
-# Перетворення введених даних користувача у DataFrame для ознак
-user_input_df = pd.DataFrame([user_input_data], columns=X.columns[:-len(language_encoded_df.columns)])
+# Формуємо DataFrame для введених даних
+user_data = pd.DataFrame({
+    'PublishYear': [publish_year]
+})
 
-# One-hot кодування введеної мови
-user_input_language_encoded = encoder.transform([[user_input_language]])
-user_input_language_df = pd.DataFrame(user_input_language_encoded, columns=encoder.get_feature_names_out(['Language']))
+# One-hot кодування введеної мови (маємо використовувати вже навчений encoder)
+user_language_encoded = encoder.transform([[language]])
+user_language_df = pd.DataFrame(user_language_encoded, columns=encoder.get_feature_names_out(['Language']))
 
-# Об'єднуємо введені дані з закодованою мовою
-user_input_final = pd.concat([user_input_df, user_input_language_df], axis=1)
+# Перетворення ознак з назви (вже отриманий словник) у DataFrame
+user_letter_df = pd.DataFrame([user_letter_features])
 
-# Прогнозуємо за допомогою моделі
+# Об'єднуємо введені дані з усіма необхідними ознаками
+user_input_final = pd.concat([user_data, user_language_df, user_letter_df], axis=1)
+
+# Переконуємося, що всі колонки присутні у потрібному порядку
+for col in X.columns:
+    if col not in user_input_final.columns:
+        user_input_final[col] = 0
+user_input_final = user_input_final[X.columns]
+
+# Прогноз
 prediction = model.predict(user_input_final)
+print(f"\nПрогнозований рейтинг книги: {prediction[0]:.2f}")
 
-# Виведення результатів
-print(f"Прогнозований рейтинг: {prediction[0]:.2f}")
-print(f"R2 Score: {r2:.2f}")
-print(f"Mean Squared Error: {mse:.2f}")
-
-# Візуалізація
-
-# 1. Фактичні vs Прогнозовані рейтинги
+# --- Візуалізація результатів ---
 plt.figure(figsize=(8, 6))
 plt.scatter(y_test, y_pred, color='blue', alpha=0.6)
 plt.plot([y.min(), y.max()], [y.min(), y.max()], color='red', linestyle='--')
 plt.title('Фактичні vs Прогнозовані Рейтинги')
 plt.xlabel('Фактичні Рейтинги')
 plt.ylabel('Прогнозовані Рейтинги')
-plt.show()
-
-# 2. Важливість ознак (за допомогою коефіцієнтів)
-plt.figure(figsize=(8, 6))
-features = X.columns
-importance = model.coef_
-plt.barh(features, importance, color='green')
-plt.title('Важливість Ознак (Коефіцієнти Лінійної Регресії)')
-plt.xlabel('Значення коефіцієнтів')
-plt.ylabel('Ознаки')
-plt.show()
-
-# 3. Розподіл рейтингів
-plt.figure(figsize=(8, 6))
-plt.hist(y, bins=20, color='orange', edgecolor='black')
-plt.title('Розподіл Рейтингів')
-plt.xlabel('Рейтинг')
-plt.ylabel('Частота')
 plt.show()
