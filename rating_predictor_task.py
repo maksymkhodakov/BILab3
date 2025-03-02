@@ -23,15 +23,18 @@ def extract_letter_features(title):
     return features
 
 
-# Функція для отримання введених даних від користувача
 def get_user_input():
-    print("Введіть дані для прогнозування рейтингу книги:")
+    """
+    Отримує введення користувача для прогнозування рейтингу книги.
+    Повертає: рік публікації, мову, назву книги та ознаки з назви.
+    """
+    print("\nВведіть дані для прогнозування рейтингу книги:")
     publish_year = int(input("Введіть рік публікації: "))
     language = input("Введіть мову (наприклад, 'eng'): ")
     title = input("Введіть назву книги: ")
     # Отримуємо ознаки з назви
     letter_features = extract_letter_features(title)
-    return publish_year, language, letter_features
+    return publish_year, language, title, letter_features
 
 
 # --- Завантаження та підготовка даних ---
@@ -39,7 +42,7 @@ def get_user_input():
 # Завантаження даних з CSV; роздільник ';'
 df = pd.read_csv('CSV_BI_Lab1_data_source.csv', sep=';')
 
-# Прибираємо зайві пробіли в назвах колонок, якщо потрібно
+# Прибираємо зайві пробіли в назвах колонок
 df.columns = [col.strip() for col in df.columns]
 
 # Замінюємо кому на крапку в колонці 'Rating' та переводимо у тип float
@@ -48,11 +51,7 @@ df['Rating'] = df['Rating'].replace({',': '.'}, regex=True).astype(float)
 # Видаляємо записи з пропущеним рейтингом
 df = df.dropna(subset=['Rating'])
 
-# Використовуємо наступні ознаки для прогнозу:
-# - PublishYear (рік публікації)
-# - Language (мова)
-# - Літери, присутні в назві (Name)
-# Для цього спочатку створимо ознаки з назви книги.
+# Створення ознак з назви книги (Name)
 letter_features_df = df['Name'].apply(extract_letter_features).apply(pd.Series)
 
 # Об'єднуємо оригінальний DataFrame з ознаками з назви
@@ -76,7 +75,7 @@ feature_cols = features_numeric + list(language_encoded_df.columns) + [col for c
 X = df[feature_cols]
 y = df['Rating']
 
-# Видаляємо можливі NaN (хоча зазвичай їх не має після імпутації)
+# Видаляємо можливі NaN (якщо вони є)
 X = X.dropna()
 y = y[X.index]
 
@@ -102,15 +101,16 @@ print(" - Літери в назві: аналізує, чи впливає ст
 print("\nВидавці можуть використовувати цей аналіз для оптимізації назв книг, адаптуючи їх під цільову аудиторію,")
 print("а також для прогнозування потенційної успішності книги перед її виходом на ринок.\n")
 
-# --- Отримання введених даних від користувача та прогноз ---
-publish_year, language, user_letter_features = get_user_input()
+# --- Перший прогноз ---
+print("=== Перший прогноз ===")
+publish_year, language, title, user_letter_features = get_user_input()
 
 # Формуємо DataFrame для введених даних
 user_data = pd.DataFrame({
     'PublishYear': [publish_year]
 })
 
-# One-hot кодування введеної мови (маємо використовувати вже навчений encoder)
+# One-hot кодування введеної мови (використовуємо вже навчений encoder)
 user_language_encoded = encoder.transform([[language]])
 user_language_df = pd.DataFrame(user_language_encoded, columns=encoder.get_feature_names_out(['Language']))
 
@@ -126,11 +126,50 @@ for col in X.columns:
         user_input_final[col] = 0
 user_input_final = user_input_final[X.columns]
 
-# Прогноз
-prediction = model.predict(user_input_final)
-print(f"\nПрогнозований рейтинг книги: {prediction[0]:.2f}")
+# Прогноз для першої книги
+predicted_rating = model.predict(user_input_final)[0]
+print(f"\nПрогнозований рейтинг книги: {predicted_rating:.2f}")
 
-# --- Візуалізація результатів ---
+# Перевірка, чи існує книга в дата-сеті (порівнюємо назву, ігноруючи регістр)
+mask = df['Name'].str.lower() == title.lower()
+if mask.any():
+    real_rating = df.loc[mask, 'Rating'].iloc[0]
+    print(f"Реальний рейтинг книги: {real_rating:.2f}")
+else:
+    print("Книга не знайдена в дата-сеті, порівняння неможливе.")
+
+# --- Додаткові прогнози ---
+while True:
+    choice = input("\nБажаєте зробити ще один прогноз? (y/n): ").strip().lower()
+    if choice != 'y':
+        print("Завершення програми.")
+        break
+
+    publish_year, language, title, user_letter_features = get_user_input()
+
+    user_data = pd.DataFrame({
+        'PublishYear': [publish_year]
+    })
+    user_language_encoded = encoder.transform([[language]])
+    user_language_df = pd.DataFrame(user_language_encoded, columns=encoder.get_feature_names_out(['Language']))
+    user_letter_df = pd.DataFrame([user_letter_features])
+    user_input_final = pd.concat([user_data, user_language_df, user_letter_df], axis=1)
+    for col in X.columns:
+        if col not in user_input_final.columns:
+            user_input_final[col] = 0
+    user_input_final = user_input_final[X.columns]
+
+    predicted_rating = model.predict(user_input_final)[0]
+    print(f"\nПрогнозований рейтинг книги: {predicted_rating:.2f}")
+
+    mask = df['Name'].str.lower() == title.lower()
+    if mask.any():
+        real_rating = df.loc[mask, 'Rating'].iloc[0]
+        print(f"Реальний рейтинг книги: {real_rating:.2f}")
+    else:
+        print("Книга не знайдена в дата-сеті, порівняння неможливе.")
+
+# --- Візуалізація результатів (опціонально) ---
 plt.figure(figsize=(8, 6))
 plt.scatter(y_test, y_pred, color='blue', alpha=0.6)
 plt.plot([y.min(), y.max()], [y.min(), y.max()], color='red', linestyle='--')

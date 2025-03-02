@@ -2,108 +2,107 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder
 
-# Завантаження даних
-df = pd.read_csv('CSV_BI_Lab1_data_source.csv', sep=';')
+# Вмикаємо інтерактивний режим для графіків
+plt.ion()
 
-# Обробка колонки 'Rating': замінюємо коми на крапки та переводимо у тип float
+# --- Завантаження та попередня обробка даних ---
+usecols = ['Name', 'Rating', 'PublishYear', 'PublisherNaming']
+# Для тестування завантажуємо лише 10000 рядків
+df = pd.read_csv('CSV_BI_Lab1_data_source.csv', sep=';', usecols=usecols, nrows=10000)
+
 df['Rating'] = df['Rating'].replace({',': '.'}, regex=True).astype(float)
-
-# Видаляємо записи з пропущеним рейтингом
 df = df.dropna(subset=['Rating'])
-
-# Створення цільової змінної: якщо Rating >= 4.5, то "High", інакше "Low"
 df['RatingClass'] = np.where(df['Rating'] >= 4.5, 'High', 'Low')
 
-# Вибір ознак для моделі: розподіл оцінок та загальна кількість відгуків
-features = ['RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview']
+# --- Обробка PublisherNaming ---
+df['PublisherNaming'] = df['PublisherNaming'].fillna("Unknown")
+min_freq = 10
+pub_counts = df['PublisherNaming'].value_counts()
+df['PublisherNaming'] = df['PublisherNaming'].apply(lambda x: x if pub_counts[x] >= min_freq else 'Other')
 
-# Заповнення пропущених значень середнім значенням для ознак
+# --- Формування ознак ---
 imputer = SimpleImputer(strategy='mean')
-df[features] = imputer.fit_transform(df[features])
+df[['PublishYear']] = imputer.fit_transform(df[['PublishYear']])
 
-# Формування X (ознаки) та y (цільова змінна)
-X = df[features]
+encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+publisher_encoded = encoder.fit_transform(df[['PublisherNaming']])
+publisher_encoded_df = pd.DataFrame(publisher_encoded,
+                                    columns=encoder.get_feature_names_out(['PublisherNaming']),
+                                    index=df.index)
+
+X = pd.concat([df[['PublishYear']], publisher_encoded_df], axis=1)
 y = df['RatingClass']
 
-# Розподіл даних на тренувальну та тестову вибірки
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# --- Модель 1: Logistic Regression ---
+# --- Побудова моделей класифікації ---
 log_reg = LogisticRegression(max_iter=1000)
 log_reg.fit(X_train, y_train)
 y_pred_log = log_reg.predict(X_test)
 accuracy_log = accuracy_score(y_test, y_pred_log)
 
-# Детальний звіт для Logistic Regression
 print("=== Logistic Regression Results ===")
 print(f"Accuracy: {accuracy_log:.2f}\n")
-cm_log = confusion_matrix(y_test, y_pred_log, labels=['High','Low'])
+cm_log = confusion_matrix(y_test, y_pred_log, labels=['High', 'Low'])
 print("Confusion Matrix (Logistic Regression):")
 print(cm_log)
 print("\nClassification Report (Logistic Regression):")
 print(classification_report(y_test, y_pred_log, target_names=['High', 'Low']))
 
-# --- Модель 2: Decision Tree Classifier ---
 tree_clf = DecisionTreeClassifier(random_state=42)
 tree_clf.fit(X_train, y_train)
 y_pred_tree = tree_clf.predict(X_test)
 accuracy_tree = accuracy_score(y_test, y_pred_tree)
 
-# Детальний звіт для Decision Tree
 print("\n=== Decision Tree Classifier Results ===")
 print(f"Accuracy: {accuracy_tree:.2f}\n")
-cm_tree = confusion_matrix(y_test, y_pred_tree, labels=['High','Low'])
+cm_tree = confusion_matrix(y_test, y_pred_tree, labels=['High', 'Low'])
 print("Confusion Matrix (Decision Tree):")
 print(cm_tree)
 print("\nClassification Report (Decision Tree):")
 print(classification_report(y_test, y_pred_tree, target_names=['High', 'Low']))
 
-# --- Візуалізація результатів класифікації ---
 
-# Функція для побудови heatmap матриці плутанини
 def plot_confusion_matrix(cm, title):
     plt.figure(figsize=(6, 4))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['High','Low'], yticklabels=['High','Low'])
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=['High', 'Low'], yticklabels=['High', 'Low'])
     plt.title(title)
-    plt.xlabel("Predicted")
-    plt.ylabel("Actual")
+    plt.xlabel("Predicted Class")
+    plt.ylabel("Actual Class")
     plt.show()
+
 
 plot_confusion_matrix(cm_log, "Confusion Matrix - Logistic Regression")
 plot_confusion_matrix(cm_tree, "Confusion Matrix - Decision Tree")
 
-# Візуалізація розподілу кількості книг за класами
-plt.figure(figsize=(6,4))
+plt.figure(figsize=(6, 4))
 sns.countplot(data=df, x='RatingClass', palette='viridis')
 plt.title("Кількість книг за класами RatingClass")
-plt.xlabel("Rating Class")
+plt.xlabel("Клас рейтингу")
 plt.ylabel("Кількість книг")
 plt.show()
 
-# Візуалізація середніх значень ознак для кожного класу
-class_summary = df.groupby('RatingClass')[features].mean().reset_index()
-class_summary = pd.melt(class_summary, id_vars='RatingClass', var_name='Feature', value_name='Mean Value')
-
-plt.figure(figsize=(10,6))
-sns.barplot(data=class_summary, x='Feature', y='Mean Value', hue='RatingClass', palette='viridis')
-plt.title("Середні значення ознак для класів High та Low")
+plt.figure(figsize=(10, 6))
+sns.countplot(data=df, x='PublishYear', hue='RatingClass', palette='viridis')
+plt.title("Розподіл класів за роками публікації")
+plt.xlabel("Рік публікації")
+plt.ylabel("Кількість книг")
 plt.xticks(rotation=45)
-plt.ylabel("Середнє значення")
-plt.xlabel("Ознака")
+plt.legend(title='Rating Class')
 plt.show()
 
-# Виведення перших 10 рядків даних з класифікацією
 print("\nПерші 10 рядків даних з колонкою 'RatingClass':")
-print(df[['Name', 'RatingDist1', 'RatingDist2', 'RatingDist3', 'RatingDist4', 'RatingDist5', 'CountsOfReview', 'Rating', 'RatingClass']].head(10))
+print(df[['Name', 'PublishYear', 'PublisherNaming', 'Rating', 'RatingClass']].head(10))
 
-# --- Збереження результатів класифікації в CSV ---
-# Зберігаємо лише стовпці 'Name' та 'RatingClass'
 classification_results = df[['Name', 'RatingClass']]
 classification_results.to_csv('classification_results.csv', index=False, encoding='utf-8-sig')
 print("\nРезультати класифікації збережено у файл 'classification_results.csv'")

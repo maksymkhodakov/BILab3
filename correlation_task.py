@@ -1,153 +1,102 @@
-import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import chi2_contingency, spearmanr
-from sklearn.impute import SimpleImputer
-from sklearn.metrics import mutual_info_score
+from sklearn.feature_selection import mutual_info_regression
+from sklearn.preprocessing import LabelEncoder
 
-# Завантаження даних
+# ------------------------------
+# 1. Завантаження та попередня обробка даних
+# ------------------------------
+# Завантаження даних із CSV-файлу
 df = pd.read_csv('CSV_BI_Lab1_data_source.csv', sep=';')
 
-# Заповнення пропусків для категоріальних змінних 'Language', 'Authors', 'PublisherNaming'
-df['Language'] = df['Language'].fillna(df['Language'].mode()[0])
-df['Authors'] = df['Authors'].fillna(df['Authors'].mode()[0])
-df['PublisherNaming'] = df['PublisherNaming'].fillna(df['PublisherNaming'].mode()[0])
-
-# Перетворення значень у колонці 'Rating': заміна ком на крапки та перетворення на float
+# Обробка рейтингу: заміна ком на крапки та перетворення в float
 df['Rating'] = df['Rating'].replace({',': '.'}, regex=True).astype(float)
 
-# Створення категоріальної змінної для 'CountsOfReview'
-df['CountsOfReviewCategory'] = pd.cut(df['CountsOfReview'], bins=[0, 100, 500, 1000, 5000, 10000, 20000],
-                                      labels=["0-100", "101-500", "501-1000", "1001-5000", "5001-10000", "10001-20000"])
+# Перетворення важливих колонок у числовий формат
+numeric_cols = ['CountsOfReview', 'Rating', 'PublishYear', 'PublishMonth']
+df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
 
-# Заповнення пропущених значень для числових колонок, якщо є
-imputer = SimpleImputer(strategy='mean')
-df[['CountsOfReview', 'Rating']] = imputer.fit_transform(df[['CountsOfReview', 'Rating']])
+# Видаляємо рядки з пропущеними значеннями для цих колонок
+df = df.dropna(subset=numeric_cols)
 
+# ------------------------------
+# 2. Додаткові характеристики
+# ------------------------------
+# 2.1 Довжина назви книги (TitleLength)
+df['TitleLength'] = df['Name'].fillna("").apply(len)
 
-# --- Аналіз залежностей за допомогою статистичних тестів ---
+# 2.2 Для видавництва (PublisherNaming) переконаємося, що немає пропусків
+df['PublisherNaming'] = df['PublisherNaming'].fillna(df['PublisherNaming'].mode()[0])
 
-def chi_square_test(column1, column2):
-    crosstab = pd.crosstab(column1, column2)
-    chi2, p_val, _, _ = chi2_contingency(crosstab)
-    print(f"\nChi-squared test між {column1.name} та {column2.name}:")
-    print(f"Chi-squared: {chi2:.2f}")
-    print(f"P-value: {p_val:.4f}")
-    if p_val < 0.05:
-        print("Є статистична залежність між цими змінними (р < 0.05).")
-    else:
-        print("Немає статистичної залежності між цими змінними (р >= 0.05).")
+# ------------------------------
+# 3. Обчислення кореляційних матриць для числових змінних
+# ------------------------------
+# Розширений набір числових характеристик
+num_features = ['CountsOfReview', 'Rating', 'PublishYear', 'PublishMonth', 'TitleLength']
 
-
-# Тести залежностей
-chi_square_test(df['Language'], df['CountsOfReviewCategory'])
-chi_square_test(df['Authors'], df['CountsOfReviewCategory'])
-chi_square_test(df['PublisherNaming'], df['CountsOfReviewCategory'])
-
-# Pearson кореляція (для числових змінних)
-pearson_corr = df[['CountsOfReview', 'Rating']].corr(method='pearson')
-print("\nPearson Correlation Matrix:")
+# 3.1 Pearson кореляція
+pearson_corr = df[num_features].corr(method='pearson')
+print("Pearson Correlation Matrix (Extended):")
 print(pearson_corr)
 
-# Spearman кореляція (для монотонних залежностей)
-spearman_corr, _ = spearmanr(df['CountsOfReview'], df['Rating'])
-print(f"\nSpearman Correlation between 'CountsOfReview' and 'Rating': {spearman_corr:.4f}")
+# 3.2 Spearman кореляція
+spearman_corr = df[num_features].corr(method='spearman')
+print("\nSpearman Correlation Matrix (Extended):")
+print(spearman_corr)
 
-# Mutual Information (для нелінійних залежностей)
-df['CountsOfReviewCategory'] = df['CountsOfReviewCategory'].fillna(df['CountsOfReviewCategory'].mode()[0])
-mi = mutual_info_score(df['CountsOfReviewCategory'], df['Rating'])
-print(f"\nMutual Information between 'CountsOfReviewCategory' and 'Rating': {mi:.4f}")
+# 3.3 Mutual Information (для нелінійних залежностей)
+mi_matrix = pd.DataFrame(index=num_features, columns=num_features)
+for col1 in num_features:
+    for col2 in num_features:
+        mi = mutual_info_regression(df[[col1]], df[col2], random_state=42)
+        mi_matrix.loc[col1, col2] = mi[0]
+mi_matrix = mi_matrix.astype(float)
+print("\nMutual Information Matrix (Extended):")
+print(mi_matrix)
 
-# --- Розширена візуалізація ---
+# ------------------------------
+# 4. Аналіз PublisherNaming (категорійна змінна)
+# ------------------------------
+# Використаємо χ²-тест для перевірки залежності між PublisherNaming та, наприклад, категоріями кількості відгуків.
+df['CountsOfReviewCategory'] = pd.cut(df['CountsOfReview'],
+                                      bins=[0, 100, 500, 1000, 5000, 10000, 20000],
+                                      labels=["0-100", "101-500", "501-1000", "1001-5000", "5001-10000", "10001-20000"])
+ct = pd.crosstab(df['PublisherNaming'], df['CountsOfReviewCategory'])
+chi2, p_val, dof, expected = chi2_contingency(ct)
+print("\nChi-squared test between PublisherNaming and CountsOfReviewCategory:")
+print(f"Chi-squared: {chi2:.2f}, P-value: {p_val:.4f}")
 
-# 1. Візуалізація розподілу категоріальних змінних
+# Також можна обчислити взаємну інформацію між PublisherNaming та іншими числовими змінними,
+# спершу проведемо Label Encoding для PublisherNaming
+le = LabelEncoder()
+df['PublisherEncoded'] = le.fit_transform(df['PublisherNaming'])
+mi_publisher = {}
+for feature in ['CountsOfReview', 'Rating', 'PublishYear', 'PublishMonth', 'TitleLength']:
+    mi = mutual_info_regression(df[[feature]], df['PublisherEncoded'], random_state=42)
+    mi_publisher[feature] = mi[0]
+print("\nMutual Information between PublisherNaming and numeric features:")
+print(mi_publisher)
 
-# Розподіл по мовах
-plt.figure(figsize=(10, 6))
-sns.countplot(data=df, x='Language', palette='Set2', order=df['Language'].value_counts().index)
-plt.title('Розподіл книг по мовах')
-plt.xlabel('Мова')
-plt.ylabel('Кількість книг')
-plt.xticks(rotation=45)
+# ------------------------------
+# 5. Візуалізація кореляційних матриць та парних залежностей
+# ------------------------------
+plt.figure(figsize=(10, 8))
+sns.heatmap(pearson_corr, annot=True, cmap='coolwarm', vmin=-1, vmax=1)
+plt.title('Pearson Correlation Matrix (Extended)')
 plt.tight_layout()
 plt.show()
 
-# Топ 10 авторів
-plt.figure(figsize=(10, 6))
-sns.countplot(data=df, x='Authors', palette='Set2', order=df['Authors'].value_counts().index[:10])
-plt.title('Топ 10 авторів')
-plt.xlabel('Автор')
-plt.ylabel('Кількість книг')
-plt.xticks(rotation=90)
+plt.figure(figsize=(10, 8))
+sns.heatmap(spearman_corr, annot=True, cmap='coolwarm', vmin=-1, vmax=1)
+plt.title('Spearman Correlation Matrix (Extended)')
 plt.tight_layout()
 plt.show()
 
-# Розподіл по категоріям кількості оглядів
-plt.figure(figsize=(10, 6))
-sns.countplot(data=df, x='CountsOfReviewCategory', palette='Set3',
-              order=df['CountsOfReviewCategory'].value_counts().index)
-plt.title('Розподіл книг по категоріях кількості оглядів')
-plt.xlabel('Категорія кількості оглядів')
-plt.ylabel('Кількість книг')
+plt.figure(figsize=(10, 8))
+sns.heatmap(mi_matrix, annot=True, cmap='viridis')
+plt.title('Mutual Information Matrix (Extended)')
 plt.tight_layout()
 plt.show()
-
-# 2. Візуалізація числових змінних
-
-# Гістограма кількості оглядів з KDE
-plt.figure(figsize=(10, 6))
-sns.histplot(df['CountsOfReview'], kde=True, color='blue', bins=30)
-plt.title('Розподіл кількості оглядів')
-plt.xlabel('Кількість оглядів')
-plt.ylabel('Частота')
-plt.tight_layout()
-plt.show()
-
-# Scatter plot: залежність між кількістю оглядів та рейтингом
-plt.figure(figsize=(10, 6))
-sns.scatterplot(data=df, x='CountsOfReview', y='Rating', color='green', alpha=0.7)
-plt.title('Залежність між кількістю оглядів та рейтингом')
-plt.xlabel('Кількість оглядів')
-plt.ylabel('Рейтинг')
-plt.tight_layout()
-plt.show()
-
-# Boxplot: розподіл рейтингу по категоріях кількості оглядів
-plt.figure(figsize=(10, 6))
-sns.boxplot(data=df, x='CountsOfReviewCategory', y='Rating', palette='Set1')
-plt.title('Розподіл рейтингу по категоріях кількості оглядів')
-plt.xlabel('Категорія кількості оглядів')
-plt.ylabel('Рейтинг')
-plt.tight_layout()
-plt.show()
-
-# 3. Додаткова візуалізація залежностей через теплову карту кореляцій для числових змінних
-plt.figure(figsize=(8, 6))
-corr_matrix = df[['CountsOfReview', 'Rating']].corr()
-sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
-plt.title('Кореляційна матриця для CountsOfReview та Rating')
-plt.tight_layout()
-plt.show()
-
-# --- Business Value та детальна інтерпретація ---
-
-print("\n=== Business Value ===")
-print("1. Аналіз категоріальних змінних (Language, Authors, PublisherNaming, CountsOfReviewCategory):")
-print("- Дозволяє видавцям визначити, які сегменти ринку (мовні, авторські або за видавництвом) є найбільш активними.")
-print("   - Ця інформація може бути використана для таргетованої реклами та оптимізації маркетингових кампаній.")
-print("2. Залежність між кількістю оглядів та рейтингом:")
-print("- Кореляційний аналіз та візуалізації допомагають зрозуміти, як кількість відгуків впливає на загальний "
-      "рейтинг книги.")
-print("   - Це може вплинути на стратегію підвищення якості продукту та роботу з клієнтами.")
-print("3. Візуалізація розподілу даних:")
-print("- Графіки (histogram, scatter plot, boxplot, heatmap) забезпечують наочність даних і дозволяють виявити "
-      "закономірності,")
-print("     які важливі для прийняття бізнес-рішень, таких як планування випусків та розподіл рекламного бюджету.")
-print("4. Використання статистичних тестів (Chi-squared, Spearman, Mutual Information):")
-print("- Ці показники допомагають об'єктивно оцінити залежності між змінними та визначити, чи існують статистично "
-      "значущі зв'язки.")
-print("   - Результати тестів можна використовувати для подальшої сегментації ринку та оптимізації бізнес-процесів.")
-print("5. Загалом, цей аналіз дозволяє:")
-print("   - Зрозуміти ринкові тренди та змінність вподобань клієнтів.")
-print("   - Оптимізувати продуктовий портфель та спрямувати зусилля на найбільш перспективні сегменти.")
-print("   - Приймати обґрунтовані рішення щодо майбутніх інвестицій та маркетингових стратегій.\n")
